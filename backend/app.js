@@ -52,6 +52,17 @@ function authenticate(req, res, next) {
   }
 }
 
+function authorize(...allowedRoles) {
+  return (req, res, next) => {
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        message: "Forbidden",
+      });
+    }
+    next();
+  };
+}
+
 app.post(
   "/register",
   rateLimiter,
@@ -499,6 +510,85 @@ app.get("/products", async (req, res) => {
     products: requestedProducts.rows,
   });
 });
+
+app.post(
+  "/products",
+  authenticate,
+  authorize("admin"),
+  [
+    body("name")
+      .trim()
+      .notEmpty()
+      .withMessage("Name must not be empty")
+      .bail()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Name must between  1 - 100 characters"),
+
+    body("price")
+      .notEmpty()
+      .withMessage("Price must not be empty")
+      .bail()
+      .isFloat({ min: 0 })
+      .withMessage("Price must be decimal"),
+
+    body("stock")
+      .notEmpty()
+      .withMessage("Stock must not be empty")
+      .bail()
+      .isInt({ min: 0 })
+      .withMessage("Stock must be integer and cannot be negative"),
+
+    body("category")
+      .trim()
+      .notEmpty()
+      .withMessage("Category must not be empty")
+      .bail()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Category must be between 1 - 100 chars"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        errors: errors.array(),
+      });
+    }
+
+    const { name, price, stock, description, category } = req.body;
+
+    const findProducts = await pool.query(
+      `SELECT * 
+       FROM products 
+       WHERE name = $1 AND
+             price = $2 AND
+             stock = $3 AND
+             description = $4 AND
+             category = $5
+      `,
+      [name, price, stock, description, category],
+    );
+
+    if (findProducts.rows.length > 0) {
+      return res.status(409).json({
+        message: "Product already exists",
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO products 
+       (name, price, stock, description, category) 
+       VALUES ($1, $2, $3, $4, $5)
+      `,
+      [name, price, stock, description, category],
+    );
+
+    return res.status(201).json({
+      message: "Successfully created",
+      product: result.rows[0],
+    });
+  },
+);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port: ${PORT}`);
