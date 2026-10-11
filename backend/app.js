@@ -447,17 +447,41 @@ app.get("/me", authenticate, async (req, res) => {
 });
 
 app.get("/products", async (req, res) => {
-  const { search, page = "1", limit = "20" } = req.query;
+  const { sort, search, page = "1", limit = "20" } = req.query;
 
   const pageNumber = Number(page);
   const limitNumber = Number(limit);
   const offset = (pageNumber - 1) * limitNumber;
 
-  let sql = `SELECT * FROM products`;
-  let values = [];
+  let sql = `SELECT * FROM products `;
+  const values = [];
 
   if (search) {
-    sql += `WHERE name ILIKE $1`;
+    sql += `WHERE name ILIKE $1 `;
+    values.push(`%${search}%`);
+  }
+
+  let sortColumn;
+
+  switch (sort) {
+    case "name":
+      sortColumn = "name";
+      break;
+
+    case "price":
+      sortColumn = "price";
+      break;
+
+    case "stock":
+      sortColumn = "stock";
+      break;
+
+    default:
+      sortColumn = "id";
+  }
+
+  if (sort) {
+    sql += `ORDER BY ${sortColumn} `;
   }
 
   sql += `
@@ -465,12 +489,14 @@ app.get("/products", async (req, res) => {
   OFFSET $${values.length + 2}
   `;
 
+  values.push(limitNumber, offset);
+
   const requestedProducts = await pool.query(sql, values);
 
   return res.status(200).json({
     page: pageNumber,
     limit: limitNumber,
-    products: requestedProducts.rows[0],
+    products: requestedProducts.rows,
   });
 });
 
