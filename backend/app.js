@@ -6,12 +6,14 @@ import jwt from "jsonwebtoken";
 import pool from "./db.js";
 import dotenv from "dotenv";
 import { rateLimit } from "express-rate-limit";
+import helmet from "helmet";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(helmet());
 app.use(express.json());
 app.use(cookieParser());
 
@@ -337,7 +339,7 @@ app.post("/refresh-token", async (req, res) => {
   }
 
   const findUserSession = await pool.query(
-    `SELECT user_id, expires_at, refresh_token_hash, created_at, revoke_at
+    `SELECT id, user_id, expires_at, refresh_token_hash, created_at, revoke_at
      FROM session 
      WHERE user_id = $1 AND revoke_at IS NULL
     `,
@@ -441,6 +443,34 @@ app.get("/me", authenticate, async (req, res) => {
 
   return res.status(200).json({
     user: findUser.rows[0],
+  });
+});
+
+app.get("/products", async (req, res) => {
+  const { search, page = "1", limit = "20" } = req.query;
+
+  const pageNumber = Number(page);
+  const limitNumber = Number(limit);
+  const offset = (pageNumber - 1) * limitNumber;
+
+  let sql = `SELECT * FROM products`;
+  let values = [];
+
+  if (search) {
+    sql += `WHERE name ILIKE $1`;
+  }
+
+  sql += `
+  LIMIT $${values.length + 1}
+  OFFSET $${values.length + 2}
+  `;
+
+  const requestedProducts = await pool.query(sql, values);
+
+  return res.status(200).json({
+    page: pageNumber,
+    limit: limitNumber,
+    products: requestedProducts.rows[0],
   });
 });
 
